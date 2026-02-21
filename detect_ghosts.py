@@ -44,6 +44,7 @@ def detect_ghosts():
         WHERE
             t.last_seen_at < NOW() - INTERVAL '15 minutes'
             AND t.service_date = CURRENT_DATE
+            AND t.first_seen_at > NOW() - INTERVAL '3 hours'
         GROUP BY t.trip_id, t.route_id, r.total_stops
         HAVING
             MAX(t.stop_sequence)::float / r.total_stops < %s
