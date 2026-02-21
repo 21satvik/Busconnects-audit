@@ -12,7 +12,8 @@ DB_CONFIG = {
     "host": "127.0.0.1"
 }
 
-GHOST_THRESHOLD = 0.80  # disappeared before 80% of stops
+GHOST_THRESHOLD = 0.80
+MAX_FIRST_STOP = 5
 
 def detect_ghosts():
     conn = psycopg2.connect(**DB_CONFIG)
@@ -44,9 +45,11 @@ def detect_ghosts():
             t.last_seen_at < NOW() - INTERVAL '15 minutes'
             AND t.service_date = CURRENT_DATE
         GROUP BY t.trip_id, t.route_id, r.total_stops
-        HAVING MAX(t.stop_sequence)::float / r.total_stops < %s
+        HAVING
+            MAX(t.stop_sequence)::float / r.total_stops < %s
+            AND MIN(t.stop_sequence) <= %s
         ON CONFLICT (trip_id) DO NOTHING
-    """, (GHOST_THRESHOLD,))
+    """, (GHOST_THRESHOLD, MAX_FIRST_STOP))
 
     flagged = cur.rowcount
     conn.commit()
