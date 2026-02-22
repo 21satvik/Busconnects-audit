@@ -214,7 +214,7 @@ def fetch_vehicle_positions(conn, collected_at):
     execute_values(cur, """
         INSERT INTO vehicle_positions (
             vehicle_id, trip_id, route_id, operator, spine,
-            latitude, longitude, bearing, speed, collected_at
+            latitude, longitude, collected_at
         )
         VALUES %s
         ON CONFLICT (vehicle_id, collected_at) DO NOTHING
