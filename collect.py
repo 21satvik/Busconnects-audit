@@ -202,8 +202,6 @@ def fetch_vehicle_positions(conn, collected_at):
             spine,
             v.position.latitude,
             v.position.longitude,
-            v.position.bearing,
-            v.position.speed,
             collected_at
         ))
 
