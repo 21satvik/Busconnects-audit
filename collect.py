@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 API_KEY = os.getenv("NTA_API_KEY")
-FEED_URL = "https://api.nationaltransport.ie/gtfsr/v2/TripUpdates"
+TRIP_UPDATES_URL = "https://api.nationaltransport.ie/gtfsr/v2/TripUpdates"
+VEHICLES_URL = "https://api.nationaltransport.ie/gtfsr/v2/Vehicles"
 
 DB_CONFIG = {
     "dbname": "busconnects",
@@ -26,7 +27,6 @@ OPERATOR_MAP = {
     "7778020": "Bus Eireann"
 }
 
-# BusConnects spines
 SPINE_ROUTE_MAP = {
     "5249_119701": "N", "5249_119702": "N",
     "5249_119703": "S", "5249_119704": "S", "5249_119705": "S",
@@ -39,7 +39,6 @@ SPINE_ROUTE_MAP = {
     "5402_123846": "N", "5402_123847": "S"
 }
 
-# Dublin Bus legacy routes
 DB_LEGACY = {
     "5402_123775","5402_123776","5402_123777","5402_123778","5402_123779",
     "5402_123780","5402_123781","5402_123782","5402_123783","5402_123784",
@@ -64,7 +63,6 @@ DB_LEGACY = {
     "5402_123888","5402_123889","5402_123890"
 }
 
-# Go-Ahead legacy routes
 GA_LEGACY = {
     "5249_119681","5249_119682","5249_119683","5249_119684","5249_119685",
     "5249_119686","5249_119687","5249_119688","5249_119689","5249_119690",
@@ -97,25 +95,22 @@ def get_service_date(scheduled_arrival_secs: int) -> date:
         return (dt - timedelta(days=1)).date()
     return dt.date()
 
-def fetch_and_store():
-    collected_at = datetime.now(timezone.utc)
-
+def fetch_trip_updates(conn, collected_at):
     try:
         response = requests.get(
-            FEED_URL,
+            TRIP_UPDATES_URL,
             headers={"x-api-key": API_KEY},
             timeout=30
         )
         response.raise_for_status()
     except Exception as e:
-        print(f"{collected_at} — FETCH ERROR: {e}")
-        sys.exit(1)
+        print(f"{collected_at} — TRIP UPDATES FETCH ERROR: {e}")
+        return 0
 
     feed = gtfs_realtime_pb2.FeedMessage()
     feed.ParseFromString(response.content)
 
     rows = []
-
     for entity in feed.entity:
         if not entity.HasField("trip_update"):
             continue
@@ -146,10 +141,8 @@ def fetch_and_store():
             ))
 
     if not rows:
-        print(f"{collected_at} — No route data in feed")
-        return
+        return 0
 
-    conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor()
     execute_values(cur, """
         INSERT INTO trip_observations (
@@ -167,11 +160,78 @@ def fetch_and_store():
             actual_departure_secs   = EXCLUDED.actual_departure_secs,
             last_seen_at            = EXCLUDED.last_seen_at
     """, rows)
-
     conn.commit()
     cur.close()
+    return len(rows)
+
+def fetch_vehicle_positions(conn, collected_at):
+    try:
+        response = requests.get(
+            VEHICLES_URL,
+            headers={"x-api-key": API_KEY},
+            timeout=30
+        )
+        response.raise_for_status()
+    except Exception as e:
+        print(f"{collected_at} — VEHICLES FETCH ERROR: {e}")
+        return 0
+
+    feed = gtfs_realtime_pb2.FeedMessage()
+    feed.ParseFromString(response.content)
+
+    rows = []
+    for entity in feed.entity:
+        if not entity.HasField("vehicle"):
+            continue
+
+        v = entity.vehicle
+        route_id = v.trip.route_id
+
+        if route_id not in ALL_ROUTE_MAP:
+            continue
+
+        agency_id = ROUTE_AGENCY_MAP.get(route_id, "")
+        operator = OPERATOR_MAP.get(agency_id, "Unknown")
+        spine = ALL_ROUTE_MAP[route_id]
+
+        rows.append((
+            v.vehicle.id,
+            v.trip.trip_id,
+            route_id,
+            operator,
+            spine,
+            v.position.latitude,
+            v.position.longitude,
+            v.position.bearing,
+            v.position.speed,
+            collected_at
+        ))
+
+    if not rows:
+        return 0
+
+    cur = conn.cursor()
+    execute_values(cur, """
+        INSERT INTO vehicle_positions (
+            vehicle_id, trip_id, route_id, operator, spine,
+            latitude, longitude, bearing, speed, collected_at
+        )
+        VALUES %s
+        ON CONFLICT (vehicle_id, collected_at) DO NOTHING
+    """, rows)
+    conn.commit()
+    cur.close()
+    return len(rows)
+
+def main():
+    collected_at = datetime.now(timezone.utc)
+    conn = psycopg2.connect(**DB_CONFIG)
+
+    trip_rows = fetch_trip_updates(conn, collected_at)
+    vehicle_rows = fetch_vehicle_positions(conn, collected_at)
+
     conn.close()
-    print(f"{collected_at} — {len(rows)} rows upserted")
+    print(f"{collected_at} — {trip_rows} trip rows upserted, {vehicle_rows} vehicle positions written")
 
 if __name__ == "__main__":
-    fetch_and_store()
+    main()
