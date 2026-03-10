@@ -4,7 +4,7 @@
 >
 > That's what started this.
 
-BusConnects is the largest redesign of Dublin's bus network in decades. The NTA publishes quarterly KPI reports showing punctuality improvements and passenger growth. This project independently verifies those claims using real-time GTFS-R data — collected every 60 seconds, 24/7, across all 160 Dublin Bus and Go-Ahead routes.
+BusConnects is the first complete overhaul of Dublin's bus network — every existing route changed, 72,000 public submissions, €2.6–3.4bn in planned investment. The NTA publishes quarterly KPI reports showing punctuality improvements and passenger growth. This project independently verifies those claims using real-time GTFS-R data — collected every 60 seconds, 24/7, across all 160 Dublin Bus and Go-Ahead routes.
 
 ---
 
